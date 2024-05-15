@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Prediction Results</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f9;
+            color: #333;
+        }
+        h1 {
+            color: #5a5a5a;
+        }
+        #container {
+            width: 90%; 
+            max-width: 1200px; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: white;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            padding: 20px;
+            border-radius: 8px;
+        }
+        .prediction-row {
+            display: flex;
+            justify-content: space-between; 
+            width: 100%;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .prediction-image, .prediction-chart, .prediction-info {
+            flex: 1 1 300px;
+            margin: 10px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: #fff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-radius: 4px;
+            padding: 10px;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+        }
+        canvas {
+            max-width: 100%;
+            max-height: 400px;
+        }
+        .button-like {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            text-align: center;
+        }
+        .button-like:hover {
+            background-color: #0056b3;
+        }
+        .delete-button {
+            background-color: #ff4d4d;
+            color: white;
+            padding: 5px 10px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+            flex: none; /* Prevent the button from growing */
+            align-self: center; /* Center the button if within a flex container */
+        }
+        
+        .prediction-row > button {
+            margin-left: auto; /* Pushes the button to the far right of the flex container if needed */
+            margin-right: 10px; /* Adds some margin to the right for spacing */
+        }
+        
+        .delete-button:hover {
+            background-color: #ff1a1a;
+        }
+        .disclaimer {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <h1>Skin Cancer Classification</h1>
+    <div>
+        <label for="imageUpload" class="button-like">Choose File</label>
+        <input type="file" id="imageUpload" accept="image/*" style="display: none;">
+        <button class="button-like" onclick="uploadImage()">Upload</button>
+    </div>
+  
+    <div class="disclaimer">
+        Disclaimer: This tool is intended for use by medical professionals as an aid in their process. It is not a replacement for professional medical advice or diagnosis.
+    </div>
+    <div id="container"></div>
+    
+
+    <script>
+        const conditionDescriptions = {
+            'akiec': 'Actinic Keratoses and Intraepithelial Carcinoma / Bowen\'s Disease: Usually appears as rough, scaly patches on sun-exposed skin, potentially developing into squamous cell carcinoma.',
+            'bcc': 'Basal Cell Carcinoma: The most common type of skin cancer, often appearing as a slightly transparent bump on the sun-exposed skin.',
+            'bkl': 'Benign Keratosis-Like Lesions: Commonly referred to as "barnacles of aging," these are usually small, harmless growths that may vary in color.',
+            'df': 'Dermatofibroma: A common benign skin nodule that typically appears on the lower legs and may be pink, brown, or red in color.',
+            'mel': 'Melanoma: A serious form of skin cancer that arises from pigment-containing cells known as melanocytes, can appear as a new dark spot or an existing mole that changes in color, size, or feel.',
+            'nv': 'Melanocytic Nevi: Commonly known as moles, these are typically harmless collections of pigmented cells which appear as small, dark brown spots.',
+            'vasc': 'Vascular Lesions: Refers to a range of conditions that affect the blood vessels, often appearing as red spots or marks on the skin.'
+        };
+
+        function uploadImage() {
+            const input = document.getElementById('imageUpload');
+            if (!input.files.length) {
+                alert('Please select a file first!');
+                return;
+            }
+
+            const image = input.files[0];
+            const formData = new FormData();
+            formData.append("file", image);
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const imageSrc = e.target.result;
+                fetch('http://localhost:8000/predict/', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    addToTable(imageSrc, data, image.name);
+                    input.value = ''; // Clear the input after the upload is complete
+                })
+                .catch(error => console.error('Error:', error));
+            }
+            reader.readAsDataURL(image);
+        }
+
+        function addToTable(imageSrc, data, imageName) {
+            const container = document.getElementById('container');
+            const newRow = document.createElement('div');
+            newRow.className = 'prediction-row';
+
+            const imageDiv = document.createElement('div');
+            imageDiv.className = 'prediction-image';
+            const img = document.createElement('img');
+            img.src = imageSrc;
+            imageDiv.appendChild(img);
+
+            const nameDiv = document.createElement('div');
+            nameDiv.className = 'image-name';
+            nameDiv.textContent = imageName;
+            imageDiv.appendChild(nameDiv);
+
+            const chartDiv = document.createElement('div');
+            chartDiv.className = 'prediction-chart';
+            const canvas = document.createElement('canvas');
+            chartDiv.appendChild(canvas);
+
+            const infoDiv = document.createElement('div');
+            infoDiv.className = 'prediction-info';
+            let highestCondition = Object.keys(data).reduce((a, b) => data[a] > data[b] ? a : b);
+            infoDiv.innerHTML = `<strong>${highestCondition}:</strong> ${conditionDescriptions[highestCondition]}`;
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'delete-button';
+            deleteBtn.textContent = 'Delete';
+            deleteBtn.onclick = function() { newRow.remove(); };
+
+            newRow.appendChild(imageDiv);
+            newRow.appendChild(chartDiv);
+            newRow.appendChild(infoDiv);
+            newRow.appendChild(deleteBtn);
+            container.insertBefore(newRow, container.firstChild);
+
+            const ctx = canvas.getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(data),
+                    datasets: [{
+                        label: 'Prediction Probability',
+                        data: Object.values(data),
+                        backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
